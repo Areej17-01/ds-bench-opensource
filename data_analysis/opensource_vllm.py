@@ -3,6 +3,7 @@ import re
 import json
 import time
 import pandas as pd
+import tiktoken
 from tqdm.notebook import tqdm
 from openai import OpenAI
 
@@ -10,18 +11,21 @@ from openai import OpenAI
 MODEL_LIMITS = {
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 128_000,
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 128_000,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 128_000,
 }
 
 # The cost per token for each model input (free for self-hosted)
 MODEL_COST_PER_INPUT = {
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 0.0,
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 0.0,
 }
 
 # The cost per token for each model output (free for self-hosted)
 MODEL_COST_PER_OUTPUT = {
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 0.0,
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 0.0,
 }
 
 
@@ -50,7 +54,11 @@ def get_model_response(client, text, model):
             }
         ],
         temperature=0,
-        max_tokens=4096,
+        # max_tokens=20,
+        max_tokens=16384,  # For reasoning models (recommended)
+        # max_tokens=32768,  # For max generation length (official max)
+        # max_tokens=8192,   # If you need more input space
+        # max_tokens=4096,   # Minimal reservation
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0
@@ -98,13 +106,32 @@ def read_txt(path):
         return f.read()
 
 
+def truncate_text(text, max_tokens, encoding):
+    """Truncate text to fit within token limit"""
+    tokens = encoding.encode(text)
+    if len(tokens) > max_tokens:
+        # Keep the last max_tokens to preserve most recent context
+        text = encoding.decode(tokens[-max_tokens:])
+    return text
+
+
 # Initialize vLLM client
 # Update this URL with your RunPod endpoint
 VLLM_API_BASE = "http://localhost:8000/v1"  # Replace with your RunPod URL
 client = OpenAI(api_key="EMPTY", base_url=VLLM_API_BASE)
 
 # Select model to evaluate
-model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+model = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+
+# Initialize tokenizer for the model
+# Using cl100k_base as approximation - you can use specific tokenizer if needed
+encoding = tiktoken.get_encoding("cl100k_base")
+
+# Reserve tokens for generation
+tokens4generation = 16384  # For reasoning models (recommended)
+# tokens4generation = 32768  # For max generation length (official max)
+# tokens4generation = 8192   # If you need more input space
+# tokens4generation = 4096   # Minimal reservation
 
 data_path = "./data/"
 total_cost = 0
@@ -158,8 +185,12 @@ for id in tqdm(range(len(samples))):
         for question in questions:
             prompt = text + f"The questions are detailed as follows. \n {question}"
             
+            # Truncate text if it exceeds model's context limit
+            max_input_tokens = MODEL_LIMITS[model] - tokens4generation
+            cut_text = truncate_text(prompt, max_input_tokens, encoding)
+            
             start = time.time()
-            response = get_model_response(client, prompt, model)
+            response = get_model_response(client, cut_text, model)
             cost = response.usage.completion_tokens * MODEL_COST_PER_OUTPUT[model] + response.usage.prompt_tokens * MODEL_COST_PER_INPUT[model]
             
             answers.append({
