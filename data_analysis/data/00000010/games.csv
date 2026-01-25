@@ -1,0 +1,5 @@
+Date,Round,Team_H,Team_A,Score_H,Score_A,Time_HG,Time_AG,Player_HG,Player_AG
+20160813,1,Adrianople,Ani,2,1,"10,20",25,"5,10",12
+20160813,1,Ani,Adrianople,1,1,30,30,8,8
+20160814,1,Antioch,Bari,3,1,"15,45,60",50,"7,9,11",14
+20160814,1,Bari,Antioch,0,2,---,"10,70",---,"3,6"
