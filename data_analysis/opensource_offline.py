@@ -7,6 +7,9 @@ from tqdm import tqdm
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 
+# Global token configuration
+MAX_OUTPUT_TOKENS = 32768  # Single source of truth for max output tokens
+
 # Model configurations
 MODEL_LIMITS = {
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 128_000,
@@ -41,6 +44,30 @@ def truncate_text(text, max_tokens, tokenizer):
         # Keep the last max_tokens to preserve most recent context
         text = tokenizer.decode(tokens[-max_tokens:], skip_special_tokens=True)
     return text
+
+
+def format_with_chat_template(system_message, user_message, tokenizer):
+    """
+    Format messages using the model's chat template.
+    Works with any model that has a chat template defined.
+    """
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message}
+    ]
+    
+    try:
+        # Apply chat template without tokenization (return string)
+        formatted_prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        return formatted_prompt
+    except Exception as e:
+        print(f"Warning: Chat template failed ({e}), falling back to simple format")
+        # Fallback to simple format if chat template is not available
+        return f"{system_message}\n\n{user_message}"
 
 
 def find_jpg_files(directory):
@@ -96,14 +123,30 @@ print(f"Loading vLLM model for offline inference...")
 print("This will take several minutes...")
 
 # For single GPU:
+# llm = LLM(
+#     model=model,
+#     max_model_len=131072,
+#     gpu_memory_utilization=0.95,
+#     trust_remote_code=True
+# )
+
+# At the top, add:
+MAX_CONTEXT_LENGTH = MODEL_LIMITS[model]  # 128000
+
+# Then use it:
 llm = LLM(
     model=model,
-    max_model_len=131072,
+    max_model_len=MAX_CONTEXT_LENGTH,  # Clean and correct
     gpu_memory_utilization=0.95,
     trust_remote_code=True
 )
+SAFETY_MARGIN=1000
+# Also update max_input_tokens calculation:
+max_input_tokens = MAX_CONTEXT_LENGTH - MAX_OUTPUT_TOKENS - SAFETY_MARGIN
 
-# # For 4 GPUs with tensor parallelism :
+
+
+# # For 4 GPUs with tensor parallelism:
 # llm = LLM(
 #     model=model,
 #     tensor_parallel_size=4,  # Use 4 GPUs together
@@ -114,21 +157,23 @@ llm = LLM(
 
 print("Model loaded successfully!")
 
-# Create sampling parameters
+# Create sampling parameters using the global MAX_OUTPUT_TOKENS
 sampling_params = SamplingParams(
     temperature=0,
-    max_tokens=16384,
+    max_tokens=MAX_OUTPUT_TOKENS,
     top_p=1,
     frequency_penalty=0,
     presence_penalty=0
 )
 
-# Reserve tokens for generation
-tokens4generation = 16384
-
 # Calculate actual max input tokens (with safety margin)
 SAFETY_MARGIN = 1000
-max_input_tokens = MODEL_LIMITS[model] - tokens4generation - SAFETY_MARGIN
+max_input_tokens = MODEL_LIMITS[model] - MAX_OUTPUT_TOKENS - SAFETY_MARGIN
+
+print(f"Configuration:")
+print(f"  Max output tokens: {MAX_OUTPUT_TOKENS}")
+print(f"  Max input tokens: {max_input_tokens}")
+print(f"  Total context window: {MODEL_LIMITS[model]}")
 
 data_path = "./data/"
 total_cost = 0
@@ -183,26 +228,29 @@ for id in tqdm(range(len(samples))):
         
         answers = []
         for question in questions:
-            prompt = text + f"The questions are detailed as follows. \n {question}"
+            user_content = text + f"The questions are detailed as follows. \n {question}"
             
             # Count tokens with actual tokenizer
-            current_tokens = count_tokens(prompt, tokenizer)
+            current_tokens = count_tokens(user_content, tokenizer)
             print(f"Current prompt tokens: {current_tokens}, Max allowed: {max_input_tokens}")
             
             # Truncate text if it exceeds model's context limit
             if current_tokens > max_input_tokens:
                 print(f"Truncating from {current_tokens} to {max_input_tokens} tokens")
-                cut_text = truncate_text(prompt, max_input_tokens, tokenizer)
+                user_content = truncate_text(user_content, max_input_tokens, tokenizer)
                 # Verify truncation
-                verify_tokens = count_tokens(cut_text, tokenizer)
+                verify_tokens = count_tokens(user_content, tokenizer)
                 print(f"After truncation: {verify_tokens} tokens")
-            else:
-                cut_text = prompt
             
-            # Format prompt for offline inference with system message
-            formatted_prompt = f"""You are a data analyst. I will give you a background introduction and data analysis question. You must answer the question.
-
-{cut_text}"""
+            # System message
+            system_message = "You are a data analyst. I will give you a background introduction and data analysis question. You must answer the question."
+            
+            # Format using chat template
+            formatted_prompt = format_with_chat_template(
+                system_message=system_message,
+                user_message=user_content,
+                tokenizer=tokenizer
+            )
             
             start = time.time()
             
