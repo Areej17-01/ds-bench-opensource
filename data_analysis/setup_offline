@@ -1,0 +1,80 @@
+# clone repo:
+git clone https://github.com/Areej17-01/ds-bench-opensource.git
+
+# download requirements
+
+#through requirement.txt or run this in terminal
+
+pip install scikit-learn pandas tqdm openai tiktoken PyMuPDF torch transformers google-generativeai openpyxl anthropic Pillow
+
+cd ds-bench-opensource/data_analysis/
+python opensource_offline.py
+
+
+
+## how to setup opensource_offline.py
+
+Adding New Models to the Evaluation ScriptQuick Steps1. Add Model ConfigurationIn the script, locate the configuration dictionaries at the top and add your new model:pythonMODEL_LIMITS = {
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 128_000,
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 128_000,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 128_000,
+    "your-org/your-model-name": 131_072,  # Add your model's context window size
+}
+
+MODEL_COST_PER_INPUT = {
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 0.0,
+    "your-org/your-model-name": 0.0,  # Set cost per input token (0.0 for self-hosted)
+}
+
+MODEL_COST_PER_OUTPUT = {
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 0.0,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 0.0,
+    "your-org/your-model-name": 0.0,  # Set cost per output token (0.0 for self-hosted)
+}
+
+2. Select Your ModelChange the model selection line:python# Select model to evaluate
+model = "your-org/your-model-name"3. Adjust GPU Settings (Optional)For single GPU (default):
+
+pythonllm = LLM(
+    model=model,
+    max_model_len=MAX_CONTEXT_LENGTH,
+    gpu_memory_utilization=0.95,
+    trust_remote_code=True
+)
+
+For multi-GPU setup:
+pythonllm = LLM(
+    model=model,
+    tensor_parallel_size=4,  # Number of GPUs
+    max_model_len=MAX_CONTEXT_LENGTH,
+    gpu_memory_utilization=0.95,
+    trust_remote_code=True
+)
+
+Important Notes
+Context Window: Set MODEL_LIMITS to your model's maximum context length
+Output Tokens: Default is 32,768. Adjust MAX_OUTPUT_TOKENS if needed
+Model Format: Use HuggingFace model identifier format (org/model-name)
+Chat Template: The script automatically uses the model's chat template. Ensure your model has one defined, or it will fall back to simple formatting
+
+Trust Remote Code: Set to True only for trusted models
+Example: Adding Llama 3.1pythonMODEL_LIMITS = {
+    # ... existing models ...
+    "meta-llama/Meta-Llama-3.1-8B-Instruct": 128_000,
+}
+
+MODEL_COST_PER_INPUT = {
+    # ... existing models ...
+    "meta-llama/Meta-Llama-3.1-8B-Instruct": 0.0,
+}
+
+MODEL_COST_PER_OUTPUT = {
+    # ... existing models ...
+    "meta-llama/Meta-Llama-3.1-8B-Instruct": 0.0,
+}
+
+# Select model
+model = "meta-llama/Meta-Llama-3.1-8B-Instruct"
