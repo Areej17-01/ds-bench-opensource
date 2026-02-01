@@ -1,0 +1,16 @@
+add model name in : MODEL_LIMITS, MODEL_COST_PER_INPUT and MODEL_COST_PER_OUTPUT
+
+update model name in 'MODEL'
+
+and in this function
+
+def get_usage(response):
+        # CRITICAL: AutoGen expects a dictionary with ALL required keys
+        # Including "cost" and "model" in addition to token counts
+        return {
+            'prompt_tokens': response.usage.prompt_tokens,
+            'completion_tokens': response.usage.completion_tokens,
+            'total_tokens': response.usage.total_tokens,
+            'cost': 0,
+            'model': 'meta-llama/Llama-3.1-8B-Instruct'  # Must match the model name
+        }
